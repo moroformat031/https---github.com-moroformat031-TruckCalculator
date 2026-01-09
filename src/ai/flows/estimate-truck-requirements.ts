@@ -59,23 +59,19 @@ Items:
 *   SKU: {{sku}}, Quantity: {{quantity}}
     {{#if weightLbs}}
     , Weight: {{weightLbs}} lbs
+    {{else}}
+    , Weight: Not provided - please estimate.
     {{/if}}
     {{#if lengthInches}}
     , Dimensions: {{lengthInches}}x{{widthInches}}x{{heightInches}} inches
+    {{else}}
+    , Dimensions: Not provided - please estimate.
     {{/if}}
 {{/each}}
 
+Based on the items' properties (estimating where necessary), their quantities, and the truck constraints, determine the truck type and number of trucks required.
 
-{{#each items}}
-  {{#unless weightLbs}}
-  For SKU {{sku}}, weight is unavailable, estimate the weight based on the item description and typical product characteristics.
-  {{/unless}}
-  {{#unless lengthInches}}
-  For SKU {{sku}}, dimensions are unavailable, estimate the dimensions based on the item description and typical product characteristics.
-  {{/unless}}
-{{/each}}
-
-Based on the items' properties, their quantities, and the truck constraints, determine the truck type and number of trucks required.
+Provide a detailed reasoning for your recommendation.
 
 Return the output in JSON format.
 `,
