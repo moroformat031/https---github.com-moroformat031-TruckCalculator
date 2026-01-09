@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -7,7 +8,6 @@ import { z } from 'zod';
 import { PlusCircle, Trash2, Loader2, Truck, FileText } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -16,17 +16,27 @@ import type { Item, TruckSuggestion } from '@/lib/types';
 import { getTruckSuggestion } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { skuData } from '@/lib/sku-data';
+import { Check, ChevronsUpDown } from 'lucide-react';
 
 const formSchema = z.object({
   sku: z.string().min(1, 'SKU is required.'),
   quantity: z.coerce.number().int().positive('Quantity must be a positive number.'),
 });
 
+const ALL_SKUS = Object.keys(skuData).map(sku => ({
+  value: sku,
+  label: `${sku} - ${skuData[sku].description}`,
+}));
+
 export function TruckCalculator() {
   const [items, setItems] = useState<Item[]>([]);
   const [suggestion, setSuggestion] = useState<TruckSuggestion | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -38,7 +48,7 @@ export function TruckCalculator() {
 
   function addItem(data: z.infer<typeof formSchema>) {
     setItems((prevItems) => [...prevItems, data]);
-    form.reset();
+    form.reset({ sku: '', quantity: 1 });
   }
 
   function removeItem(index: number) {
@@ -73,9 +83,57 @@ export function TruckCalculator() {
               render={({ field }) => (
                 <FormItem className="flex-grow">
                   <FormLabel>SKU</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., WIDGET-001" {...field} />
-                  </FormControl>
+                  <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className={cn(
+                            "w-full justify-between",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          {field.value
+                            ? ALL_SKUS.find(
+                                (sku) => sku.value === field.value
+                              )?.label
+                            : "Select SKU"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search SKU..." />
+                        <CommandList>
+                          <CommandEmpty>No SKU found.</CommandEmpty>
+                          <CommandGroup>
+                            {ALL_SKUS.map((sku) => (
+                              <CommandItem
+                                value={sku.label}
+                                key={sku.value}
+                                onSelect={() => {
+                                  form.setValue("sku", sku.value);
+                                  setPopoverOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    sku.value === field.value
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                {sku.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                   <FormMessage />
                 </FormItem>
               )}
