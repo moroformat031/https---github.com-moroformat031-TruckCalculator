@@ -21,10 +21,9 @@ const PackingSuggestionsInputSchema = z.object({
       description: z.string().optional(),
       category: z.enum(['TPO', 'Accessory', 'ISO']).optional(),
       weightLbs: z.number().optional(),
-      lengthInches: z.number().optional(),
-      widthInches: z.number().optional(),
-      heightInches: z.number().optional(),
-      rollsPerPallet: z.number().optional(),
+      palletLength: z.number().optional().describe('The length of the pallet in feet.'),
+      rollsPerPallet: z.number().optional().describe('Number of TPO rolls per pallet.'),
+      qtyPerPallet: z.number().optional().describe('Number of accessory units per pallet.'),
     })
   ).describe('List of items in the order.'),
 });
@@ -56,35 +55,35 @@ const packingSuggestionsPrompt = ai.definePrompt({
   - Half truck length: 24 feet.
   - LTL (Less Than Truckload) is for shipments taking less than 14 linear feet.
   - Truck width is 9 feet.
-  - Standard pallet dimensions are 40" x 48" (3.33' x 4'). A truck can fit two 4' wide pallets side-by-side.
+  - Standard pallet width is 4 feet. Pallet length varies. A truck can fit two 4-ft wide pallets side-by-side.
   - Maximum truck weight: 42,000 lbs.
   
   Packing Rules by Category:
   - **TPO Rolls**:
-    - They are shipped on pallets. The number of rolls per pallet is provided.
-    - The length of a TPO pallet is determined by the roll length (e.g., a 10-ft roll is on a pallet that takes 10ft of truck length).
+    - They are shipped on pallets. The number of rolls per pallet is provided ('rollsPerPallet').
+    - The length of a TPO pallet is given in 'palletLength' (in feet).
     - **Crucially, different TPO sizes (lengths) cannot be stacked on top of each other in the same footprint.** A 5-ft pallet stack and a 10-ft pallet stack must occupy different floor spaces.
-    - Pallets of the *same* TPO size can be stacked two high. For example, 32 rolls of 5-ft TPO (at 16 rolls/pallet = 2 pallets) can be stacked, but if the truck width allows, they can be placed side-by-side first. With a 9ft truck width, two 4ft-wide pallets fit side-by-side. So 4 pallets of 5-ft TPO (64 rolls) can occupy just 5 linear feet of the truck (2x2 stack).
+    - Pallets of the *same* TPO size can be stacked two high. For example, if a truck width allows, they can be placed side-by-side first. With a 9ft truck width, two 4ft-wide pallets fit side-by-side. So 4 pallets of 5-ft TPO can occupy just 5 linear feet of the truck (a 2-wide by 2-high stack).
   - **Accessories**:
-    - 40 assorted accessory units are consolidated onto a single standard pallet (4'x3.33').
+    - Accessory items are consolidated onto pallets. The number of units per pallet is given by 'qtyPerPallet'.
     - Calculate the total number of accessory pallets needed. These can be stacked or placed where space is available.
   - **ISO**:
     - ISO is not included in this calculation. Ignore any items with category 'ISO'.
 
   Calculation Steps:
-  1.  Calculate total accessory pallets: Sum all accessory quantities and divide by 40, rounding up.
-  2.  For each unique TPO SKU, calculate the number of pallets needed. (quantity / rollsPerPallet, rounded up).
-  3.  Group the TPO pallets by their length. For each length group, calculate the total number of pallets.
+  1.  Calculate total accessory pallets: For each accessory item, calculate pallets needed (\`ceil(quantity / qtyPerPallet)\`) and sum them up.
+  2.  For each unique TPO SKU, calculate the number of pallets needed (\`ceil(quantity / rollsPerPallet)\`).
+  3.  Group the TPO pallets by their palletLength. For each length group, calculate the total number of pallets.
   4.  For each TPO length group, determine the linear feet needed. Since pallets can be placed 2-wide and stacked 2-high, up to 4 pallets of the *same size* take up the space of one. Calculate the number of floor spots needed for each TPO size: \`ceil(num_pallets_for_this_size / 4)\`. The linear feet for this size is \`num_floor_spots * pallet_length_in_feet\`.
   5.  The total linear feet for TPO is the sum of the linear feet for each TPO size group.
-  6.  The total linear feet for accessories is \`ceil(total_accessory_pallets / 4) * 4_feet\`. (Assuming a 4ft pallet length for accessories).
+  6.  The total linear feet for accessories is \`ceil(total_accessory_pallets / 4) * 4\`. (Assuming a 4ft pallet length for all accessories).
   7.  Sum the linear feet for TPO and accessories to get the total required linear feet.
   8.  Based on the total linear feet, recommend the truck type (LTL, Half Truck, or Full Truck) and the number of trucks needed.
-  9.  Provide detailed packing notes explaining the pallet calculations, space allocation, and final recommendation.
+  9.  Provide detailed packing notes explaining the pallet calculations, space allocation, and final recommendation. Also, include the total weight.
 
   Items:
   {{#each items}}
-  - SKU: {{this.sku}}, Qty: {{this.quantity}}, Category: {{this.category}}{{#if this.lengthInches}}, Length: {{this.lengthInches}} inches{{/if}}{{#if this.rollsPerPallet}}, Rolls/Pallet: {{this.rollsPerPallet}}{{/if}}
+  - SKU: {{this.sku}}, Qty: {{this.quantity}}, Category: {{this.category}}{{#if this.palletLength}}, Pallet Length: {{this.palletLength}} ft{{/if}}{{#if this.rollsPerPallet}}, Rolls/Pallet: {{this.rollsPerPallet}}{{/if}}{{#if this.qtyPerPallet}}, Qty/Pallet: {{this.qtyPerPallet}}{{/if}}, Weight: {{this.weightLbs}} lbs
   {{/each}}
   
   Output in JSON format.
