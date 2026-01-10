@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -5,10 +6,10 @@
  *
  * - estimateTruckRequirements - A function that estimates the truck requirements.
  * - EstimateTruckRequirementsInput - The input type for the estimateTruckRequirements function.
- * - EstimateTruckRequirementsOutput - The return type for the estimateTruckRequirements function.
  */
 
 import {ai} from '@/ai/genkit';
+import type { EstimateTruckRequirementsOutput } from '@/lib/types';
 import {z} from 'genkit';
 
 const EstimateTruckRequirementsInputSchema = z.object({
@@ -36,7 +37,6 @@ const EstimateTruckRequirementsOutputSchema = z.object({
   truckRecommendation: TruckRecommendationSchema.describe('The recommendation for the truck requirements.')
 });
 
-export type EstimateTruckRequirementsOutput = z.infer<typeof EstimateTruckRequirementsOutputSchema>;
 
 export async function estimateTruckRequirements(input: EstimateTruckRequirementsInput): Promise<EstimateTruckRequirementsOutput> {
   return estimateTruckRequirementsFlow(input);

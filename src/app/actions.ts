@@ -1,10 +1,10 @@
 
 'use server';
 
-import { estimateTruckRequirements, type EstimateTruckRequirementsOutput } from '@/ai/flows/estimate-truck-requirements';
+import { estimateTruckRequirements, type EstimateTruckRequirementsInput } from '@/ai/flows/estimate-truck-requirements';
 import { providePackingSuggestions, type PackingSuggestionsInput, type PackingSuggestionsOutput } from '@/ai/flows/provide-packing-suggestions';
 import { skuData } from '@/lib/sku-data';
-import type { Item, ItemWithData } from '@/lib/types';
+import type { Item, ItemWithData, EstimateTruckRequirementsOutput } from '@/lib/types';
 import { z } from 'zod';
 
 const itemsSchema = z.array(
@@ -13,29 +13,6 @@ const itemsSchema = z.array(
       quantity: z.number(),
     })
 );
-
-function combineSuggestions(
-  packing: PackingSuggestionsOutput,
-  estimation: EstimateTruckRequirementsOutput
-): PackingSuggestionsOutput {
-  
-  // Simple combination logic: For now, we'll just append notes
-  // and take the more "major" truck type. A more complex logic could be to 
-  // combine linear feet or weight and re-evaluate the truck type.
-  const truckOrder = ['LTL', 'Half Truck', 'Full Truck'];
-  const packingTruckIndex = truckOrder.indexOf(packing.truckType);
-  const estimationTruckIndex = truckOrder.indexOf(estimation.truckRecommendation.truckType);
-
-  const combinedTruckType = packingTruckIndex > estimationTruckIndex ? packing.truckType : estimation.truckRecommendation.truckType;
-  const combinedTrucksNeeded = Math.max(packing.trucksNeeded, estimation.truckRecommendation.numberOfTrucks);
-
-  return {
-    truckType: combinedTruckType,
-    trucksNeeded: combinedTrucksNeeded,
-    packingNotes: `${packing.packingNotes}\n\n--- Additional Items Estimation ---\n${estimation.truckRecommendation.reasoning}`,
-  };
-}
-
 
 export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggestionsOutput> {
   const parsedItems = itemsSchema.safeParse(items);
@@ -61,10 +38,19 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
     (item.rollsPerPallet || item.qtyPerPallet) && 
     item.palletLength &&
     item.weightLbs
-  );
+  ).map(item => ({ // ensure only needed properties are passed
+    sku: item.sku,
+    quantity: item.quantity,
+    description: item.description,
+    category: item.category,
+    weightLbs: item.weightLbs,
+    palletLength: item.palletLength,
+    rollsPerPallet: item.rollsPerPallet,
+    qtyPerPallet: item.qtyPerPallet,
+  }));
 
   // Items that are missing some data and need the general estimation flow
-  const itemsForEstimation = itemsWithData.filter(item => 
+  const itemsForEstimation: EstimateTruckRequirementsInput['items'] = itemsWithData.filter(item => 
     !itemsForPacking.find(p => p.sku === item.sku)
   ).map(item => ({
     sku: item.sku,
@@ -76,19 +62,38 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
   }));
 
   try {
-    const packingPromise = itemsForPacking.length > 0 ? providePackingSuggestions({ items: itemsForPacking }) : Promise.resolve(null);
-    const estimationPromise = itemsForEstimation.length > 0 ? estimateTruckRequirements({ items: itemsForEstimation }) : Promise.resolve(null);
+    const packingPromise = itemsForPacking.length > 0 
+      ? providePackingSuggestions({ items: itemsForPacking }) 
+      : Promise.resolve(null);
+      
+    const estimationPromise = itemsForEstimation.length > 0 
+      ? estimateTruckRequirements({ items: itemsForEstimation }) 
+      : Promise.resolve(null);
 
-    const [packingSuggestion, estimationResult] = await Promise.all([packingPromise, estimationPromise]);
+    const [packingResult, estimationResult] = await Promise.all([packingPromise, estimationPromise]);
     
-    if (packingSuggestion && estimationResult) {
-      return combineSuggestions(packingSuggestion, estimationResult);
+    // Case 1: Both results are available, combine them.
+    if (packingResult && estimationResult) {
+      const truckOrder = ['LTL', 'Half Truck', 'Full Truck'];
+      const packingTruckIndex = truckOrder.indexOf(packingResult.truckType);
+      const estimationTruckIndex = truckOrder.indexOf(estimationResult.truckRecommendation.truckType);
+
+      const combinedTruckType = packingTruckIndex > estimationTruckIndex ? packingResult.truckType : estimationResult.truckRecommendation.truckType;
+      const combinedTrucksNeeded = Math.max(packingResult.trucksNeeded, estimationResult.truckRecommendation.numberOfTrucks);
+
+      return {
+        truckType: combinedTruckType,
+        trucksNeeded: combinedTrucksNeeded,
+        packingNotes: `${packingResult.packingNotes}\n\n--- Additional Items Estimation ---\n${estimationResult.truckRecommendation.reasoning}`,
+      };
     }
 
-    if (packingSuggestion) {
-      return packingSuggestion;
+    // Case 2: Only packing suggestions are available.
+    if (packingResult) {
+      return packingResult;
     }
 
+    // Case 3: Only estimation results are available.
     if (estimationResult) {
       return {
         truckType: estimationResult.truckRecommendation.truckType,
@@ -97,11 +102,15 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
       };
     }
     
-    // This case should not be reached if there are items, but as a fallback:
+    // Case 4: No results could be generated (should not be reached if items are provided).
     throw new Error('Could not calculate truck requirements for the items provided.');
 
   } catch (error) {
     console.error('Error getting truck suggestion:', error);
+    // Re-throwing a more user-friendly message
+    if (error instanceof Error && error.message.includes('DEADLINE_EXCEEDED')) {
+       throw new Error('The calculation took too long to complete. Please try again with fewer items.');
+    }
     throw new Error('An error occurred while calculating the truck requirements. Please try again.');
   }
 }

@@ -21,3 +21,12 @@ export type ItemWithData = Item & {
     qtyPerPallet?: number;
     palletLength?: number;
 };
+
+// This was previously in actions.ts, but types are better defined here.
+export type EstimateTruckRequirementsOutput = {
+  truckRecommendation: {
+    truckType: 'LTL' | 'Half Truck' | 'Full Truck';
+    numberOfTrucks: number;
+    reasoning: string;
+  };
+};
