@@ -92,10 +92,12 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
       const packingTruckIndex = truckOrder.indexOf(packingResult.truckType);
       const estimationTruckIndex = truckOrder.indexOf(estimationResult.truckRecommendation.truckType);
 
+      // Default to the larger truck type if they differ.
       const combinedTruckType = packingTruckIndex > estimationTruckIndex 
         ? packingResult.truckType 
         : estimationResult.truckRecommendation.truckType;
       
+      // Sum the number of trucks needed.
       const combinedTrucksNeeded = packingResult.trucksNeeded + estimationResult.truckRecommendation.numberOfTrucks;
 
       return {
