@@ -28,9 +28,10 @@ const EstimateTruckRequirementsInputSchema = z.object({
 export type EstimateTruckRequirementsInput = z.infer<typeof EstimateTruckRequirementsInputSchema>;
 
 const TruckRecommendationSchema = z.object({
-    truckType: z.enum(['LTL', 'Half Truck', 'Full Truck']).describe('The recommended truck type (LTL, Half Truck, or Full Truck).'),
-    numberOfTrucks: z.number().int().positive().describe('The estimated number of trucks needed.'),
-    reasoning: z.string().describe('The reasoning behind the truck recommendation.')
+  truckType: z.enum(['LTL', 'Half Truck', 'Full Truck']).describe('The recommended truck type (LTL, Half Truck, or Full Truck).'),
+  // Use a plain integer type to avoid generating unsupported JSON Schema keywords
+  numberOfTrucks: z.number().int().describe('The estimated number of trucks needed.'),
+  reasoning: z.string().describe('The reasoning behind the truck recommendation.')
 });
 
 const EstimateTruckRequirementsOutputSchema = z.object({

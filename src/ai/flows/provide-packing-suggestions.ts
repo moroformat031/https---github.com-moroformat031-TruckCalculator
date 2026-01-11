@@ -32,14 +32,25 @@ export type PackingSuggestionsInput = z.infer<typeof PackingSuggestionsInputSche
 
 const PackingSuggestionsOutputSchema = z.object({
   truckType: z.enum(['LTL', 'Half Truck', 'Full Truck']).describe('Recommended truck type (LTL, Half Truck, or Full Truck)'),
-  trucksNeeded: z.number().int().positive().describe('Number of trucks needed, rounded up to the nearest whole number.'),
+  // Request trucksNeeded as an integer. Avoid min/positive constraints to prevent
+  // generating unsupported JSON Schema keywords (exclusiveMinimum).
+  trucksNeeded: z.number().int().describe('Number of trucks needed (integer).'),
   packingNotes: z.string().describe('AI suggested packing configuration.'),
 });
 
-export type PackingSuggestionsOutput = z.infer<typeof PackingSuggestionsOutputSchema>;
+// We return trucksNeeded as a number from the flow (we request a string from the model
+// to avoid incompatible JSON Schema keywords, then parse it server-side). Define the
+// public TypeScript type accordingly.
+export type PackingSuggestionsOutput = {
+  truckType: 'LTL' | 'Half Truck' | 'Full Truck';
+  trucksNeeded: number;
+  packingNotes: string;
+};
 
 export async function providePackingSuggestions(input: PackingSuggestionsInput): Promise<PackingSuggestionsOutput> {
-  return providePackingSuggestionsFlow(input);
+  // The underlying flow returns the raw parsed prompt output; cast to our
+  // public type after we've parsed trucksNeeded to a number inside the flow.
+  return (await providePackingSuggestionsFlow(input)) as unknown as PackingSuggestionsOutput;
 }
 
 const packingSuggestionsPrompt = ai.definePrompt({
@@ -106,6 +117,12 @@ const providePackingSuggestionsFlow = ai.defineFlow(
   async input => {
     // NOTE: use the prompt variable defined above (packingSuggestionsPrompt)
     const {output} = await packingSuggestionsPrompt(input);
-    return output!;
+    // Convert trucksNeeded back to a number for the public API
+    const out = output!;
+    return {
+      truckType: out.truckType,
+      trucksNeeded: Number(out.trucksNeeded) || 0,
+      packingNotes: out.packingNotes,
+    } as unknown as typeof out & { trucksNeeded: number };
   }
 );

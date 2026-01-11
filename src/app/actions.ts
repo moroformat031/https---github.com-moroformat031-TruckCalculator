@@ -134,6 +134,63 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
     if (error instanceof Error && error.message.includes('DEADLINE_EXCEEDED')) {
        throw new Error('The calculation took too long to complete. Please try again with fewer items.');
     }
+
+    // If the AI flow fails due to schema incompatibility or missing API key, fall back to a simple local estimator.
+    if (error instanceof Error && (error.message.includes('exclusiveMinimum') || error.message.includes('Please pass in the API key') || error.message.includes('FAILED_PRECONDITION'))) {
+      console.warn('Falling back to local estimator due to AI flow error.');
+
+      // Local estimation (basic implementation mirroring packing rules in the prompt)
+      // Calculate accessory pallets
+      const accessoryPallets = itemsWithData
+        .filter(i => i.category === 'Accessory' && i.qtyPerPallet)
+        .reduce((sum, it) => sum + Math.ceil((it.quantity || 0) / (it.qtyPerPallet || 1)), 0);
+
+      // Calculate TPO pallets grouped by palletLength
+      const tpoByLength = new Map<number, number>();
+      itemsWithData.filter(i => i.category === 'TPO' && i.rollsPerPallet && i.palletLength).forEach(it => {
+        const pallets = Math.ceil((it.quantity || 0) / (it.rollsPerPallet || 1));
+        const len = it.palletLength as number;
+        tpoByLength.set(len, (tpoByLength.get(len) || 0) + pallets);
+      });
+
+      // Compute linear feet for TPO
+      let tpoLinearFeet = 0;
+      for (const [len, pallets] of tpoByLength.entries()) {
+        const floorSpots = Math.ceil(pallets / 4); // 4 pallets per floor spot (2-wide x 2-high)
+        tpoLinearFeet += floorSpots * len;
+      }
+
+      // Accessories linear feet (assume 4ft pallet length)
+      const accessoryLinearFeet = Math.ceil(accessoryPallets / 4) * 4;
+
+      const totalLinearFeet = tpoLinearFeet + accessoryLinearFeet;
+
+      // Decide truck type and count
+      let truckType: 'LTL' | 'Half Truck' | 'Full Truck' = 'LTL';
+      let trucksNeeded = 1;
+      if (totalLinearFeet < 14) {
+        truckType = 'LTL';
+        trucksNeeded = 1;
+      } else if (totalLinearFeet <= 24) {
+        truckType = 'Half Truck';
+        trucksNeeded = 1;
+      } else if (totalLinearFeet <= 48) {
+        truckType = 'Full Truck';
+        trucksNeeded = 1;
+      } else {
+        truckType = 'Full Truck';
+        trucksNeeded = Math.ceil(totalLinearFeet / 48);
+      }
+
+      const packingNotes = `Local estimate used. totalLinearFeet=${totalLinearFeet}, tpoLinearFeet=${tpoLinearFeet}, accessoryLinearFeet=${accessoryLinearFeet}, accessoryPallets=${accessoryPallets}`;
+
+      return {
+        truckType,
+        trucksNeeded,
+        packingNotes,
+      };
+    }
+
     throw new Error('An error occurred while calculating the truck requirements. Please try again.');
   }
 }
