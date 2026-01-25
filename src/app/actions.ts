@@ -67,16 +67,14 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
     console.info('itemsForPacking:', itemsForPacking);
     console.info('itemsForEstimation:', itemsForEstimation);
 
-    // Run each flow separately and capture their errors so we can tell which one fails.
-    let packingResult = null;
-    let estimationResult = null;
+    let packingResult: PackingSuggestionsOutput | null = null;
+    let estimationResult: EstimateTruckRequirementsOutput | null = null;
 
     if (itemsForPacking.length > 0) {
       try {
         packingResult = await providePackingSuggestions({ items: itemsForPacking });
       } catch (err) {
         console.error('providePackingSuggestions failed. input:', itemsForPacking, 'error:', err);
-        // Re-throw the original error to preserve the message for debugging.
         throw err;
       }
     }
@@ -101,27 +99,44 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
         truckType: estimationResult.truckRecommendation.truckType,
         trucksNeeded: estimationResult.truckRecommendation.numberOfTrucks,
         packingNotes: estimationResult.truckRecommendation.reasoning,
+        linearFeet: estimationResult.truckRecommendation.linearFeet,
       };
     }
     
     // Case 3: Both results are available, combine them.
     if (packingResult && estimationResult) {
-      const truckOrder = ['LTL', 'Half Truck', 'Full Truck'];
-      const packingTruckIndex = truckOrder.indexOf(packingResult.truckType);
-      const estimationTruckIndex = truckOrder.indexOf(estimationResult.truckRecommendation.truckType);
+      const packingFeet = packingResult.linearFeet || 0;
+      const estimationFeet = estimationResult.truckRecommendation.linearFeet || 0;
 
-      // Default to the larger truck type if they differ.
-      const combinedTruckType = packingTruckIndex > estimationTruckIndex 
-        ? packingResult.truckType 
-        : estimationResult.truckRecommendation.truckType;
-      
-      // Sum the number of trucks needed.
-      const combinedTrucksNeeded = packingResult.trucksNeeded + estimationResult.truckRecommendation.numberOfTrucks;
+      const totalLinearFeet = packingFeet + estimationFeet;
+
+      let combinedTruckType: 'LTL' | 'Half Truck' | 'Full Truck' = 'LTL';
+      let combinedTrucksNeeded = 1;
+
+      if (totalLinearFeet < 14) {
+        combinedTruckType = 'LTL';
+        combinedTrucksNeeded = 1;
+      } else if (totalLinearFeet <= 24) {
+        combinedTruckType = 'Half Truck';
+        combinedTrucksNeeded = 1;
+      } else if (totalLinearFeet <= 48) {
+        combinedTruckType = 'Full Truck';
+        combinedTrucksNeeded = 1;
+      } else {
+        combinedTruckType = 'Full Truck';
+        combinedTrucksNeeded = Math.ceil(totalLinearFeet / 48);
+      }
+
+      const combinedNotes = `--- Combined Recommendation ---\n` +
+        `Based on a total of ${totalLinearFeet.toFixed(2)} linear feet, the recommendation is ${combinedTrucksNeeded} x ${combinedTruckType}.\n\n` +
+        `--- Detailed Packing Plan (${packingFeet.toFixed(2)} ft) ---\n${packingResult.packingNotes}\n\n` +
+        `--- Additional Items Estimation (${estimationFeet.toFixed(2)} ft) ---\n${estimationResult.truckRecommendation.reasoning}`;
 
       return {
         truckType: combinedTruckType,
         trucksNeeded: combinedTrucksNeeded,
-        packingNotes: `--- Detailed Packing Plan ---\n${packingResult.packingNotes}\n\n--- Additional Items Estimation ---\n${estimationResult.truckRecommendation.reasoning}`,
+        packingNotes: combinedNotes,
+        linearFeet: totalLinearFeet,
       };
     }
 
@@ -188,6 +203,7 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
         truckType,
         trucksNeeded,
         packingNotes,
+        linearFeet: totalLinearFeet,
       };
     }
 

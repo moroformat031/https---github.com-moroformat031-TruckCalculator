@@ -28,5 +28,6 @@ export type EstimateTruckRequirementsOutput = {
     truckType: 'LTL' | 'Half Truck' | 'Full Truck';
     numberOfTrucks: number;
     reasoning: string;
+    linearFeet: number;
   };
 };

@@ -32,25 +32,15 @@ export type PackingSuggestionsInput = z.infer<typeof PackingSuggestionsInputSche
 
 const PackingSuggestionsOutputSchema = z.object({
   truckType: z.enum(['LTL', 'Half Truck', 'Full Truck']).describe('Recommended truck type (LTL, Half Truck, or Full Truck)'),
-  // Request trucksNeeded as an integer. Avoid min/positive constraints to prevent
-  // generating unsupported JSON Schema keywords (exclusiveMinimum).
   trucksNeeded: z.number().int().describe('Number of trucks needed (integer).'),
   packingNotes: z.string().describe('AI suggested packing configuration.'),
+  linearFeet: z.number().describe('The total linear feet required for the packing plan.'),
 });
 
-// We return trucksNeeded as a number from the flow (we request a string from the model
-// to avoid incompatible JSON Schema keywords, then parse it server-side). Define the
-// public TypeScript type accordingly.
-export type PackingSuggestionsOutput = {
-  truckType: 'LTL' | 'Half Truck' | 'Full Truck';
-  trucksNeeded: number;
-  packingNotes: string;
-};
+export type PackingSuggestionsOutput = z.infer<typeof PackingSuggestionsOutputSchema>;
 
 export async function providePackingSuggestions(input: PackingSuggestionsInput): Promise<PackingSuggestionsOutput> {
-  // The underlying flow returns the raw parsed prompt output; cast to our
-  // public type after we've parsed trucksNeeded to a number inside the flow.
-  return (await providePackingSuggestionsFlow(input)) as unknown as PackingSuggestionsOutput;
+  return providePackingSuggestionsFlow(input);
 }
 
 const packingSuggestionsPrompt = ai.definePrompt({
@@ -90,14 +80,14 @@ const packingSuggestionsPrompt = ai.definePrompt({
   6.  The total linear feet for accessories is \`ceil(total_accessory_pallets / 4) * 4\`. (Assuming a 4ft pallet length for all accessories).
   7.  Sum the linear feet for TPO and accessories to get the total required linear feet.
   8.  Based on the total linear feet, recommend the truck type (LTL, Half Truck, or Full Truck) and the number of trucks needed.
-  9.  Provide detailed packing notes explaining the pallet calculations, space allocation, and final recommendation. Also, include the total weight.
+  9.  Provide detailed packing notes explaining the pallet calculations, space allocation, and final recommendation. Also, include the total weight and total linear feet.
 
   Items:
   {{#each items}}
   - SKU: {{this.sku}}, Qty: {{this.quantity}}, Category: {{this.category}}{{#if this.palletLength}}, Pallet Length: {{this.palletLength}} ft{{/if}}{{#if this.rollsPerPallet}}, Rolls/Pallet: {{this.rollsPerPallet}}{{/if}}{{#if this.qtyPerPallet}}, Qty/Pallet: {{this.qtyPerPallet}}{{/if}}, Weight: {{this.weightLbs}} lbs
   {{/each}}
   
-  Output in JSON format.
+  Output in JSON format. Ensure you include the total 'linearFeet' in the response.
   `, config: {
     safetySettings: [
       {
@@ -115,14 +105,7 @@ const providePackingSuggestionsFlow = ai.defineFlow(
     outputSchema: PackingSuggestionsOutputSchema,
   },
   async input => {
-    // NOTE: use the prompt variable defined above (packingSuggestionsPrompt)
-    const {output} = await packingSuggestionsPrompt(input);
-    // Convert trucksNeeded back to a number for the public API
-    const out = output!;
-    return {
-      truckType: out.truckType,
-      trucksNeeded: Number(out.trucksNeeded) || 0,
-      packingNotes: out.packingNotes,
-    } as unknown as typeof out & { trucksNeeded: number };
+    const {output} = await providePackingSuggestionsPrompt(input);
+    return output!;
   }
 );

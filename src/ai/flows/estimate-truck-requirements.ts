@@ -29,9 +29,9 @@ export type EstimateTruckRequirementsInput = z.infer<typeof EstimateTruckRequire
 
 const TruckRecommendationSchema = z.object({
   truckType: z.enum(['LTL', 'Half Truck', 'Full Truck']).describe('The recommended truck type (LTL, Half Truck, or Full Truck).'),
-  // Use a plain integer type to avoid generating unsupported JSON Schema keywords
   numberOfTrucks: z.number().int().describe('The estimated number of trucks needed.'),
-  reasoning: z.string().describe('The reasoning behind the truck recommendation.')
+  reasoning: z.string().describe('The reasoning behind the truck recommendation.'),
+  linearFeet: z.number().describe('The estimated total linear feet required.'),
 });
 
 const EstimateTruckRequirementsOutputSchema = z.object({
@@ -70,11 +70,11 @@ Items:
     {{/if}}
 {{/each}}
 
-Based on the items' properties (estimating where necessary), their quantities, and the truck constraints, determine the truck type and number of trucks required.
+Based on the items' properties (estimating where necessary), their quantities, and the truck constraints, determine the truck type, number of trucks required, and estimate the total linear feet.
 
 Provide a detailed reasoning for your recommendation.
 
-Return the output in JSON format.
+Return the output in JSON format. Ensure you include the estimated 'linearFeet' in the response.
 `,
 });
 
