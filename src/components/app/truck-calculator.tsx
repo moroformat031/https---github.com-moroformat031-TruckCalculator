@@ -173,7 +173,9 @@ export function TruckCalculator() {
             <TableBody>
               {items.map((item, index) => (
                 <TableRow key={index}>
-                  <TableCell className="font-medium">{item.sku}</TableCell>
+                  <TableCell className="font-medium">
+                    {item.sku} - {skuData[item.sku]?.description}
+                  </TableCell>
                   <TableCell>{item.quantity}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => removeItem(index)}>
