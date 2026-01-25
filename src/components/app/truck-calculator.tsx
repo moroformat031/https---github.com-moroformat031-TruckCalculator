@@ -29,7 +29,7 @@ const formSchema = z.object({
 
 const ALL_SKUS = Object.keys(skuData).map(sku => ({
   value: sku,
-  label: sku,
+  label: `${sku} - ${skuData[sku].description}`,
 }));
 
 export function TruckCalculator() {
