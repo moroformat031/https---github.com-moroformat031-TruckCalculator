@@ -1,10 +1,11 @@
+
 'use client';
 
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { PlusCircle, Trash2, Loader2, Truck, FileText } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, Truck, FileText, Plus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,7 +49,7 @@ export function TruckCalculator() {
 
   function addItem(data: z.infer<typeof formSchema>) {
     setItems((prevItems) => [...prevItems, data]);
-    form.reset();
+    form.reset({ sku: '', quantity: 1 });
   }
 
   function removeItem(index: number) {
@@ -56,6 +57,14 @@ export function TruckCalculator() {
   }
 
   async function handleCalculate() {
+    if (items.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No Items',
+        description: 'Please add at least one item to calculate.',
+      });
+      return;
+    }
     setIsLoading(true);
     setSuggestion(null);
     try {
@@ -221,18 +230,34 @@ export function TruckCalculator() {
               <CardDescription>Based on the items provided, here is our suggested shipping plan.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex flex-col items-center gap-4 rounded-lg bg-secondary/80 p-6">
-                <div className="flex flex-wrap justify-center gap-4">
-                  {Array.from({ length: suggestion.trucksNeeded }).map((_, i) => (
-                    <Truck key={i} className="h-16 w-16 text-primary" />
-                  ))}
-                </div>
-                <p className="text-2xl font-bold text-foreground">
-                  {suggestion.trucksNeeded} &times; {suggestion.truckType}
+            <div className="flex flex-col items-center gap-4 rounded-lg bg-secondary/80 p-6">
+                {suggestion.truckType === 'Mixed' ? (
+                   <div className="flex items-center justify-center gap-2">
+                     <Truck className="h-16 w-16 text-primary" />
+                     <Plus className="h-8 w-8 text-primary" />
+                     <Truck className="h-12 w-12 text-primary" />
+                   </div>
+                ) : (
+                  <div className="flex flex-wrap justify-center gap-4">
+                    {Array.from({ length: suggestion.trucksNeeded }).map((_, i) => (
+                      <Truck key={i} className="h-16 w-16 text-primary" />
+                    ))}
+                  </div>
+                )}
+                <p className="text-2xl font-bold text-foreground text-center">
+                  {suggestion.truckType === 'Mixed' 
+                    ? 'Mixed Fleet Required' 
+                    : suggestion.trucksNeeded > 0 
+                      ? `${suggestion.trucksNeeded} × ${suggestion.truckType}`
+                      : 'No Trucks Needed'
+                  }
                 </p>
+                 {suggestion.truckType === 'Mixed' && (
+                    <p className="text-sm text-muted-foreground">See AI Packing Notes for details.</p>
+                )}
               </div>
 
-              <Accordion type="single" collapsible>
+              <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="packing-notes">
                   <AccordionTrigger>
                     <div className="flex items-center gap-2">
@@ -240,7 +265,7 @@ export function TruckCalculator() {
                       View AI Packing Notes
                     </div>
                   </AccordionTrigger>
-                  <AccordionContent className="whitespace-pre-wrap text-sm text-muted-foreground">
+                  <AccordionContent className="whitespace-pre-wrap rounded-md bg-muted/50 p-4 text-sm text-muted-foreground font-mono">
                     {suggestion.packingNotes}
                   </AccordionContent>
                 </AccordionItem>

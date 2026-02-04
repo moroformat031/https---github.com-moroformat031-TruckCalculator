@@ -5,9 +5,10 @@ export type Item = {
 };
 
 export type TruckSuggestion = {
-  truckType: 'LTL' | 'Half Truck' | 'Full Truck';
+  truckType: 'LTL' | 'Half Truck' | 'Full Truck' | 'Mixed';
   trucksNeeded: number;
   packingNotes: string;
+  linearFeet: number;
 };
 
 export type ItemWithData = Item & {

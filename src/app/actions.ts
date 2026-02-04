@@ -4,7 +4,7 @@
 import { estimateTruckRequirements, type EstimateTruckRequirementsInput } from '@/ai/flows/estimate-truck-requirements';
 import { providePackingSuggestions, type PackingSuggestionsInput, type PackingSuggestionsOutput } from '@/ai/flows/provide-packing-suggestions';
 import { skuData } from '@/lib/sku-data';
-import type { Item, ItemWithData, EstimateTruckRequirementsOutput } from '@/lib/types';
+import type { Item, ItemWithData, EstimateTruckRequirementsOutput, TruckSuggestion } from '@/lib/types';
 import { z } from 'zod';
 
 const itemsSchema = z.array(
@@ -14,7 +14,49 @@ const itemsSchema = z.array(
     })
 );
 
-export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggestionsOutput> {
+function getTrucksForFeet(totalLinearFeet: number): { truckType: TruckSuggestion['truckType']; trucksNeeded: number; summary: string } {
+    if (totalLinearFeet <= 0) {
+      return { truckType: 'LTL', trucksNeeded: 0, summary: 'No shipment items.' };
+    }
+  
+    const fullTrucks = Math.floor(totalLinearFeet / 48);
+    const remainingFeet = totalLinearFeet % 48;
+  
+    let overflowTruckType: 'LTL' | 'Half Truck' | 'Full Truck' | null = null;
+    if (remainingFeet > 0) {
+      if (remainingFeet < 14) {
+        overflowTruckType = 'LTL';
+      } else if (remainingFeet <= 24) {
+        overflowTruckType = 'Half Truck';
+      } else {
+        overflowTruckType = 'Full Truck';
+      }
+    }
+  
+    const trucksNeeded = fullTrucks + (overflowTruckType ? 1 : 0);
+  
+    if (fullTrucks > 0 && overflowTruckType) {
+      return {
+        truckType: 'Mixed',
+        trucksNeeded,
+        summary: `${fullTrucks} x Full Truck(s) and 1 x ${overflowTruckType}`,
+      };
+    }
+  
+    if (fullTrucks > 0) {
+      return { truckType: 'Full Truck', trucksNeeded: fullTrucks, summary: `${fullTrucks} x Full Truck(s)` };
+    }
+  
+    if (overflowTruckType) {
+      return { truckType: overflowTruckType, trucksNeeded: 1, summary: `1 x ${overflowTruckType}` };
+    }
+  
+    // Should not be reached if totalLinearFeet > 0
+    return { truckType: 'LTL', trucksNeeded: 0, summary: 'Calculation error.' };
+  }
+  
+
+export async function getTruckSuggestion(items: Item[]): Promise<TruckSuggestion> {
   const parsedItems = itemsSchema.safeParse(items);
   if (!parsedItems.success) {
       throw new Error("Invalid items provided.");
@@ -29,7 +71,12 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
   });
   
   if (itemsWithData.length === 0) {
-    throw new Error('No items to calculate.');
+    return {
+        truckType: 'LTL',
+        trucksNeeded: 0,
+        packingNotes: 'No items to calculate.',
+        linearFeet: 0,
+    }
   }
 
   // Items that have the necessary data for the detailed packing flow
@@ -71,142 +118,41 @@ export async function getTruckSuggestion(items: Item[]): Promise<PackingSuggesti
     let estimationResult: EstimateTruckRequirementsOutput | null = null;
 
     if (itemsForPacking.length > 0) {
-      try {
         packingResult = await providePackingSuggestions({ items: itemsForPacking });
-      } catch (err) {
-        console.error('providePackingSuggestions failed. input:', itemsForPacking, 'error:', err);
-        throw err;
-      }
     }
 
     if (itemsForEstimation.length > 0) {
-      try {
         estimationResult = await estimateTruckRequirements({ items: itemsForEstimation });
-      } catch (err) {
-        console.error('estimateTruckRequirements failed. input:', itemsForEstimation, 'error:', err);
-        throw err;
-      }
     }
     
-    // Case 1: Only packing suggestions are available.
-    if (packingResult && !estimationResult) {
-      return packingResult;
-    }
+    const packingFeet = packingResult?.linearFeet ?? 0;
+    const estimationFeet = estimationResult?.truckRecommendation.linearFeet ?? 0;
+    const totalLinearFeet = packingFeet + estimationFeet;
 
-    // Case 2: Only estimation results are available.
-    if (!packingResult && estimationResult) {
-      return {
-        truckType: estimationResult.truckRecommendation.truckType,
-        trucksNeeded: estimationResult.truckRecommendation.numberOfTrucks,
-        packingNotes: estimationResult.truckRecommendation.reasoning,
-        linearFeet: estimationResult.truckRecommendation.linearFeet,
-      };
-    }
-    
-    // Case 3: Both results are available, combine them.
-    if (packingResult && estimationResult) {
-      const packingFeet = packingResult.linearFeet || 0;
-      const estimationFeet = estimationResult.truckRecommendation.linearFeet || 0;
+    const { truckType, trucksNeeded, summary } = getTrucksForFeet(totalLinearFeet);
 
-      const totalLinearFeet = packingFeet + estimationFeet;
+    const combinedNotes = `--- Combined Recommendation ---\n` +
+    `Based on a total of ${totalLinearFeet.toFixed(2)} linear feet, the recommendation is: ${summary}.\n\n` +
+    (packingResult ? `--- Detailed Packing Plan (${packingFeet.toFixed(2)} ft) ---\n${packingResult.packingNotes}\n\n` : '') +
+    (estimationResult ? `--- Additional Items Estimation (${estimationFeet.toFixed(2)} ft) ---\n${estimationResult.truckRecommendation.reasoning}`: '');
 
-      let combinedTruckType: 'LTL' | 'Half Truck' | 'Full Truck' = 'LTL';
-      let combinedTrucksNeeded = 1;
-
-      if (totalLinearFeet < 14) {
-        combinedTruckType = 'LTL';
-        combinedTrucksNeeded = 1;
-      } else if (totalLinearFeet <= 24) {
-        combinedTruckType = 'Half Truck';
-        combinedTrucksNeeded = 1;
-      } else if (totalLinearFeet <= 48) {
-        combinedTruckType = 'Full Truck';
-        combinedTrucksNeeded = 1;
-      } else {
-        combinedTruckType = 'Full Truck';
-        combinedTrucksNeeded = Math.ceil(totalLinearFeet / 48);
-      }
-
-      const combinedNotes = `--- Combined Recommendation ---\n` +
-        `Based on a total of ${totalLinearFeet.toFixed(2)} linear feet, the recommendation is ${combinedTrucksNeeded} x ${combinedTruckType}.\n\n` +
-        `--- Detailed Packing Plan (${packingFeet.toFixed(2)} ft) ---\n${packingResult.packingNotes}\n\n` +
-        `--- Additional Items Estimation (${estimationFeet.toFixed(2)} ft) ---\n${estimationResult.truckRecommendation.reasoning}`;
-
-      return {
-        truckType: combinedTruckType,
-        trucksNeeded: combinedTrucksNeeded,
+    return {
+        truckType,
+        trucksNeeded,
         packingNotes: combinedNotes,
         linearFeet: totalLinearFeet,
       };
-    }
-
-    // Case 4: No results could be generated (should not be reached if items are provided).
-    throw new Error('Could not calculate truck requirements for the items provided.');
 
   } catch (error) {
     console.error('Error getting truck suggestion:', error);
-    // Re-throwing a more user-friendly message
-    if (error instanceof Error && error.message.includes('DEADLINE_EXCEEDED')) {
-       throw new Error('The calculation took too long to complete. Please try again with fewer items.');
+    if (error instanceof Error) {
+        if (error.message.includes('DEADLINE_EXCEEDED')) {
+            throw new Error('The calculation took too long to complete. Please try again with fewer items.');
+        }
+        if (error.message.includes('SAFETY')) {
+            throw new Error('The request was blocked by safety settings. Please check the items and try again.');
+        }
     }
-
-    // If the AI flow fails due to schema incompatibility or missing API key, fall back to a simple local estimator.
-    if (error instanceof Error && (error.message.includes('exclusiveMinimum') || error.message.includes('Please pass in the API key') || error.message.includes('FAILED_PRECONDITION'))) {
-      console.warn('Falling back to local estimator due to AI flow error.');
-
-      // Local estimation (basic implementation mirroring packing rules in the prompt)
-      // Calculate accessory pallets
-      const accessoryPallets = itemsWithData
-        .filter(i => i.category === 'Accessory' && i.qtyPerPallet)
-        .reduce((sum, it) => sum + Math.ceil((it.quantity || 0) / (it.qtyPerPallet || 1)), 0);
-
-      // Calculate TPO pallets grouped by palletLength
-      const tpoByLength = new Map<number, number>();
-      itemsWithData.filter(i => i.category === 'TPO' && i.rollsPerPallet && i.palletLength).forEach(it => {
-        const pallets = Math.ceil((it.quantity || 0) / (it.rollsPerPallet || 1));
-        const len = it.palletLength as number;
-        tpoByLength.set(len, (tpoByLength.get(len) || 0) + pallets);
-      });
-
-      // Compute linear feet for TPO
-      let tpoLinearFeet = 0;
-      for (const [len, pallets] of tpoByLength.entries()) {
-        const floorSpots = Math.ceil(pallets / 4); // 4 pallets per floor spot (2-wide x 2-high)
-        tpoLinearFeet += floorSpots * len;
-      }
-
-      // Accessories linear feet (assume 4ft pallet length)
-      const accessoryLinearFeet = Math.ceil(accessoryPallets / 4) * 4;
-
-      const totalLinearFeet = tpoLinearFeet + accessoryLinearFeet;
-
-      // Decide truck type and count
-      let truckType: 'LTL' | 'Half Truck' | 'Full Truck' = 'LTL';
-      let trucksNeeded = 1;
-      if (totalLinearFeet < 14) {
-        truckType = 'LTL';
-        trucksNeeded = 1;
-      } else if (totalLinearFeet <= 24) {
-        truckType = 'Half Truck';
-        trucksNeeded = 1;
-      } else if (totalLinearFeet <= 48) {
-        truckType = 'Full Truck';
-        trucksNeeded = 1;
-      } else {
-        truckType = 'Full Truck';
-        trucksNeeded = Math.ceil(totalLinearFeet / 48);
-      }
-
-      const packingNotes = `Local estimate used. totalLinearFeet=${totalLinearFeet}, tpoLinearFeet=${tpoLinearFeet}, accessoryLinearFeet=${accessoryLinearFeet}, accessoryPallets=${accessoryPallets}`;
-
-      return {
-        truckType,
-        trucksNeeded,
-        packingNotes,
-        linearFeet: totalLinearFeet,
-      };
-    }
-
     throw new Error('An error occurred while calculating the truck requirements. Please try again.');
   }
 }

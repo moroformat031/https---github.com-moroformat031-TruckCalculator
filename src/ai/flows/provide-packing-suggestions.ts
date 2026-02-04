@@ -47,9 +47,9 @@ const packingSuggestionsPrompt = ai.definePrompt({
   name: 'packingSuggestionsPrompt',
   input: {schema: PackingSuggestionsInputSchema},
   output: {schema: PackingSuggestionsOutputSchema},
-  prompt: `You are an expert in packing and logistics for roofing materials, adept at optimizing space utilization within trucks.
+  prompt: `You are an expert in packing and logistics for roofing materials, adept at optimizing space utilization within trucks. Your primary goal is to calculate the total linear feet required and provide a detailed packing plan.
 
-  Given a list of items with their SKUs, quantities, and properties, your goal is to determine the most efficient way to pack these items into trucks.
+  Given a list of items with their SKUs, quantities, and properties, your goal is to determine the most efficient way to pack these items.
 
   Consider the following constraints and rules:
   - Full truck length: 48 feet.
@@ -79,8 +79,8 @@ const packingSuggestionsPrompt = ai.definePrompt({
   5.  The total linear feet for TPO is the sum of the linear feet for each TPO size group.
   6.  The total linear feet for accessories is \`ceil(total_accessory_pallets / 4) * 4\`. (Assuming a 4ft pallet length for all accessories).
   7.  Sum the linear feet for TPO and accessories to get the total required linear feet.
-  8.  Based on the total linear feet, recommend the truck type (LTL, Half Truck, or Full Truck) and the number of trucks needed.
-  9.  Provide detailed packing notes explaining the pallet calculations, space allocation, and final recommendation. Also, include the total weight and total linear feet.
+  8.  Provide detailed packing notes explaining the pallet calculations, space allocation, and total linear feet.
+  9.  Based on the total linear feet, provide a *simple* truck recommendation. If total linear feet < 14, 'LTL', 1 truck. If < 24, 'Half Truck', 1 truck. If <= 48, 'Full Truck', 1 truck. Otherwise, 'Full Truck' and calculate trucks needed as \`ceil(totalLinearFeet / 48)\`. The final, optimized truck combination will be determined later.
 
   Items:
   {{#each items}}
@@ -105,7 +105,7 @@ const providePackingSuggestionsFlow = ai.defineFlow(
     outputSchema: PackingSuggestionsOutputSchema,
   },
   async input => {
-    const {output} = await packingSuggestionsPrompt(input);
+    const {output} = await providePackingSuggestionsPrompt(input);
     return output!;
   }
 );

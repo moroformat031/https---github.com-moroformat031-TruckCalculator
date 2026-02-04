@@ -47,7 +47,7 @@ const estimateTruckRequirementsPrompt = ai.definePrompt({
   name: 'estimateTruckRequirementsPrompt',
   input: {schema: EstimateTruckRequirementsInputSchema},
   output: {schema: EstimateTruckRequirementsOutputSchema},
-  prompt: `You are a logistics expert specializing in truckload optimization. Analyze the following order details and determine the optimal truck configuration.
+  prompt: `You are a logistics expert specializing in truckload optimization. Your primary goal is to analyze the following order details and estimate the total linear feet required.
 
 Consider these constraints:
 *   Maximum truck weight: 42,000 lbs
@@ -70,9 +70,10 @@ Items:
     {{/if}}
 {{/each}}
 
-Based on the items' properties (estimating where necessary), their quantities, and the truck constraints, determine the truck type, number of trucks required, and estimate the total linear feet.
+Based on the items' properties (estimating where necessary), their quantities, and the truck constraints, estimate the total linear feet.
+Provide a detailed reasoning for your estimation.
 
-Provide a detailed reasoning for your recommendation.
+Finally, based on the total linear feet, provide a *simple* truck recommendation. If total linear feet < 14, 'LTL', 1 truck. If < 24, 'Half Truck', 1 truck. If <= 48, 'Full Truck', 1 truck. Otherwise, 'Full Truck' and calculate trucks needed as \`ceil(totalLinearFeet / 48)\`. The final, optimized truck combination will be determined later.
 
 Return the output in JSON format. Ensure you include the estimated 'linearFeet' in the response.
 `,
