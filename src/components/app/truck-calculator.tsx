@@ -81,6 +81,16 @@ export function TruckCalculator() {
     }
   }
 
+  // If the AI returned a mixed fleet recommendation, try to extract the single-line
+  // combined recommendation from the packing notes so we can show it as the summary.
+  function getMixedSummary(packingNotes?: string) {
+    if (!packingNotes) return 'Mixed Fleet Required';
+    // Look for a line like: "the recommendation is: 1 x Full Truck(s) and 1 x LTL."
+    const m = packingNotes.match(/recommendation is:?\s*(.+)/i);
+    if (m && m[1]) return m[1].trim().replace(/\.$/, '');
+    return 'Mixed Fleet Required';
+  }
+
   return (
     <div className="space-y-8">
       <div>
@@ -245,15 +255,15 @@ export function TruckCalculator() {
                   </div>
                 )}
                 <p className="text-2xl font-bold text-foreground text-center">
-                  {suggestion.truckType === 'Mixed' 
-                    ? 'Mixed Fleet Required' 
-                    : suggestion.trucksNeeded > 0 
-                      ? `${suggestion.trucksNeeded} × ${suggestion.truckType}`
-                      : 'No Trucks Needed'
+                  {suggestion.truckType === 'Mixed'
+                    ? getMixedSummary(suggestion.packingNotes)
+                    : suggestion.trucksNeeded > 0
+                    ? `${suggestion.trucksNeeded} × ${suggestion.truckType}`
+                    : 'No Trucks Needed'
                   }
                 </p>
-                 {suggestion.truckType === 'Mixed' && (
-                    <p className="text-sm text-muted-foreground">See AI Packing Notes for details.</p>
+                {suggestion.truckType === 'Mixed' && (
+                  <p className="text-sm text-muted-foreground">See AI Packing Notes for details.</p>
                 )}
               </div>
 
