@@ -1,4 +1,3 @@
-
 'use server';
 
 import { estimateTruckRequirements, type EstimateTruckRequirementsInput } from '@/ai/flows/estimate-truck-requirements';
@@ -63,9 +62,19 @@ export async function getTruckSuggestion(items: Item[]): Promise<TruckSuggestion
   
   const itemsWithData: ItemWithData[] = parsedItems.data.map(item => {
     const data = skuData[item.sku];
+    let adjustedQuantity = item.quantity;
+
+    // Convert SQFT to Board Count for ISO products
+    if (data?.category === 'ISO' && data.palletLength) {
+        // Area per board is palletLength (4 or 8) * truck standard width contribution (4)
+        const areaPerBoard = data.palletLength * 4;
+        adjustedQuantity = Math.ceil(item.quantity / areaPerBoard);
+    }
+
     return {
         ...item,
         ...data,
+        quantity: adjustedQuantity, // Passing derived unit count (boards/rolls/etc) to AI
     };
   });
   

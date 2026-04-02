@@ -156,7 +156,7 @@ export function TruckCalculator() {
     const data = skuData[sku];
     if (!data) return '';
     if (data.category === 'TPO') return 'ROLL';
-    if (data.category === 'ISO') return 'BOARD';
+    if (data.category === 'ISO') return 'SQFT';
     if (sku === '600000001029') return 'SHEET';
     return '';
   }
