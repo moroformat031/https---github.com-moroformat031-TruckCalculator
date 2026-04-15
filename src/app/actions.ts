@@ -4,7 +4,12 @@ import { estimateTruckRequirements, type EstimateTruckRequirementsInput } from '
 import { providePackingSuggestions, type PackingSuggestionsInput, type PackingSuggestionsOutput } from '@/ai/flows/provide-packing-suggestions';
 import { skuData } from '@/lib/sku-data';
 import type { Item, ItemWithData, EstimateTruckRequirementsOutput, TruckSuggestion } from '@/lib/types';
+import { getQuotaStatus, incrementQuota } from '@/lib/ai-quota';
 import { z } from 'zod';
+
+export async function getAiRequestsStatus() {
+  return getQuotaStatus();
+}
 
 const itemsSchema = z.array(
     z.object({
@@ -120,6 +125,8 @@ export async function getTruckSuggestion(items: Item[]): Promise<TruckSuggestion
   try {
     let packingResult: PackingSuggestionsOutput | null = null;
     let estimationResult: EstimateTruckRequirementsOutput | null = null;
+
+    incrementQuota();
 
     if (itemsForPacking.length > 0) {
         packingResult = await providePackingSuggestions({ items: itemsForPacking });

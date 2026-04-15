@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import type { Item, TruckSuggestion } from '@/lib/types';
-import { getTruckSuggestion } from '@/app/actions';
+import { getTruckSuggestion, getAiRequestsStatus } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -50,6 +50,11 @@ export function TruckCalculator() {
   const loadingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [quota, setQuota] = useState<{ used: number; remaining: number; limit: number } | null>(null);
+
+  useEffect(() => {
+    getAiRequestsStatus().then(setQuota);
+  }, []);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -100,6 +105,7 @@ export function TruckCalculator() {
         loadingIntervalRef.current = null;
       }
       setIsLoading(false);
+      getAiRequestsStatus().then(setQuota);
     }
   }
 
@@ -317,6 +323,15 @@ export function TruckCalculator() {
             <><Sparkles className="mr-2 h-5 w-5" />Calculate Truck Requirements</>
           )}
         </Button>
+
+        {quota && (
+          <p className={cn(
+            'text-xs tabular-nums',
+            quota.remaining <= 5 ? 'text-destructive font-medium' : 'text-muted-foreground'
+          )}>
+            AI requests today: {quota.used} / {quota.limit} &mdash; {quota.remaining} remaining &middot; resets at midnight Pacific
+          </p>
+        )}
 
         {/* Animated AI loading card */}
         <div className={cn(
