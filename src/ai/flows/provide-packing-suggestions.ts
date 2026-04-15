@@ -118,6 +118,25 @@ const packingSuggestionsPrompt = ai.definePrompt({
   },
 });
 
+async function withExponentialBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 4,
+  baseDelayMs = 1000
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const is503 = err?.message?.includes('503') || err?.status === 503;
+      if (!is503 || attempt >= maxRetries) throw err;
+      const delay = baseDelayMs * 2 ** attempt;
+      await new Promise(resolve => setTimeout(resolve, delay));
+      attempt++;
+    }
+  }
+}
+
 const providePackingSuggestionsFlow = ai.defineFlow(
   {
     name: 'providePackingSuggestionsFlow',
@@ -125,7 +144,9 @@ const providePackingSuggestionsFlow = ai.defineFlow(
     outputSchema: PackingSuggestionsOutputSchema,
   },
   async input => {
-    const {output} = await packingSuggestionsPrompt(input);
+    const {output} = await withExponentialBackoff(() =>
+      packingSuggestionsPrompt(input)
+    );
     return output!;
   }
 );

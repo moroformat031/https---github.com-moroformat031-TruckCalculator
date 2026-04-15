@@ -157,6 +157,6 @@ export async function getTruckSuggestion(items: Item[]): Promise<TruckSuggestion
             throw new Error('The request was blocked by safety settings. Please check the items and try again.');
         }
     }
-    throw new Error('An error occurred while calculating the truck requirements. Please try again.');
+    throw new Error('AI usage limit exceeded. 20 requests per day. Please try again tomorrow.');
   }
 }
