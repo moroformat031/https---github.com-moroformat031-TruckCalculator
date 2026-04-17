@@ -1,18 +1,18 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { PlusCircle, Trash2, Loader2, FileText, Plus, Check, ChevronsUpDown, Sparkles, Package, Truck as TruckLucide, Calculator, Brain } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, FileText, Plus, Check, ChevronsUpDown, Sparkles, Package, Truck as TruckLucide, Calculator, Brain, Zap } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import type { Item, TruckSuggestion } from '@/lib/types';
-import { getTruckSuggestion } from '@/app/actions';
+import type { Item, TruckSuggestion, AiUsage } from '@/lib/types';
+import { getTruckSuggestion, getAiUsage } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -50,6 +50,11 @@ export function TruckCalculator() {
   const loadingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [aiUsage, setAiUsage] = useState<AiUsage | null>(null);
+
+  useEffect(() => {
+    getAiUsage().then(setAiUsage);
+  }, []);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -88,6 +93,9 @@ export function TruckCalculator() {
     try {
       const result = await getTruckSuggestion(items);
       setSuggestion(result);
+      if (result.aiUsage) {
+        setAiUsage({ date: new Date().toISOString().split('T')[0], ...result.aiUsage });
+      }
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -305,6 +313,19 @@ export function TruckCalculator() {
       )}
 
       <div className="flex flex-col items-center gap-4">
+        {aiUsage && (
+          <div className={cn(
+            'flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium border',
+            aiUsage.remaining === 0
+              ? 'border-destructive/40 bg-destructive/10 text-destructive'
+              : aiUsage.remaining <= 5
+              ? 'border-yellow-400/40 bg-yellow-50 text-yellow-700'
+              : 'border-accent/30 bg-accent/5 text-accent'
+          )}>
+            <Zap className="h-3 w-3" />
+            <span>Gemini RPD: {aiUsage.count} / {aiUsage.limit} used &mdash; {aiUsage.remaining} remaining today</span>
+          </div>
+        )}
         <Button
           size="lg"
           onClick={handleCalculate}

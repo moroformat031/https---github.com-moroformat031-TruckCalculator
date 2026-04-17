@@ -3,8 +3,29 @@
 import { estimateTruckRequirements, type EstimateTruckRequirementsInput } from '@/ai/flows/estimate-truck-requirements';
 import { providePackingSuggestions, type PackingSuggestionsInput, type PackingSuggestionsOutput } from '@/ai/flows/provide-packing-suggestions';
 import { skuData } from '@/lib/sku-data';
-import type { Item, ItemWithData, EstimateTruckRequirementsOutput, TruckSuggestion } from '@/lib/types';
+import type { Item, ItemWithData, EstimateTruckRequirementsOutput, TruckSuggestion, AiUsage } from '@/lib/types';
+import { incrementAiUsage, getAiUsage as readAiUsage } from '@/lib/ai-usage-tracker';
 import { z } from 'zod';
+
+export async function getAiUsage(): Promise<AiUsage> {
+  return readAiUsage();
+}
+
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRetryable = msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('UNAVAILABLE');
+      if (!isRetryable || attempt === maxAttempts) throw err;
+      await new Promise(res => setTimeout(res, 1000 * attempt)); // 1s, 2s
+    }
+  }
+  throw lastError;
+}
 
 const itemsSchema = z.array(
     z.object({
@@ -122,11 +143,13 @@ export async function getTruckSuggestion(items: Item[]): Promise<TruckSuggestion
     let estimationResult: EstimateTruckRequirementsOutput | null = null;
 
     if (itemsForPacking.length > 0) {
-        packingResult = await providePackingSuggestions({ items: itemsForPacking });
+        packingResult = await withRetry(() => providePackingSuggestions({ items: itemsForPacking }));
+        incrementAiUsage();
     }
 
     if (itemsForEstimation.length > 0) {
-        estimationResult = await estimateTruckRequirements({ items: itemsForEstimation });
+        estimationResult = await withRetry(() => estimateTruckRequirements({ items: itemsForEstimation }));
+        incrementAiUsage();
     }
     
     const packingFeet = packingResult?.linearFeet ?? 0;
@@ -140,11 +163,14 @@ export async function getTruckSuggestion(items: Item[]): Promise<TruckSuggestion
     (packingResult ? `--- Detailed Packing Plan (${packingFeet.toFixed(2)} ft) ---\n${packingResult.packingNotes}\n\n` : '') +
     (estimationResult ? `--- Additional Items Estimation (${estimationFeet.toFixed(2)} ft) ---\n${estimationResult.truckRecommendation.reasoning}`: '');
 
+    const aiUsage = readAiUsage();
+
     return {
         truckType,
         trucksNeeded,
         packingNotes: combinedNotes,
         linearFeet: totalLinearFeet,
+        aiUsage: { count: aiUsage.count, remaining: aiUsage.remaining, limit: aiUsage.limit },
       };
 
   } catch (error) {
@@ -155,6 +181,9 @@ export async function getTruckSuggestion(items: Item[]): Promise<TruckSuggestion
         }
         if (error.message.includes('SAFETY')) {
             throw new Error('The request was blocked by safety settings. Please check the items and try again.');
+        }
+        if (error.message.includes('503') || error.message.includes('Service Unavailable') || error.message.includes('UNAVAILABLE')) {
+            throw new Error('Gemini is experiencing high demand right now. Please wait a moment and try again.');
         }
     }
     throw new Error('An error occurred while calculating the truck requirements. Please try again.');

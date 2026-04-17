@@ -9,6 +9,14 @@ export type TruckSuggestion = {
   trucksNeeded: number;
   packingNotes: string;
   linearFeet: number;
+  aiUsage?: { count: number; remaining: number; limit: number };
+};
+
+export type AiUsage = {
+  date: string;
+  count: number;
+  remaining: number;
+  limit: number;
 };
 
 export type ItemWithData = Item & {
